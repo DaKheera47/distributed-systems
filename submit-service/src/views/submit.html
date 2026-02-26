@@ -9,11 +9,14 @@
   <body>
     <main>
       <h1>Submit a Joke</h1>
-      <p>Add a joke to the shared database.</p>
+      <p>Submit a joke to the queue for ETL processing into the database.</p>
 
       <form action="/submit" method="post">
-        <label for="text">Joke Text</label>
-        <textarea id="text" name="text" rows="6" required></textarea>
+        <label for="setup">Setup</label>
+        <textarea id="setup" name="setup" rows="4" required></textarea>
+
+        <label for="punchline">Punchline</label>
+        <textarea id="punchline" name="punchline" rows="3" required></textarea>
 
         <label for="typeSelect">Type</label>
         <select name="type" id="typeSelect" required>
@@ -34,6 +37,10 @@
           .done(function (types) {
             $select.empty();
             $select.append($('<option>', { value: '', text: 'Select a type' }));
+            if (!types.length) {
+              $select.append($('<option>', { value: '', text: 'Types unavailable' }));
+              return;
+            }
             types.forEach(function (typeName) {
               $select.append($('<option>', { value: typeName, text: typeName }));
             });

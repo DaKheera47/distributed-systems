@@ -1,7 +1,7 @@
 import dotenv from 'dotenv';
 import express from 'express';
 import morgan from 'morgan';
-import { waitForDbReady } from './db';
+import { initRabbitPublisher } from './rabbit';
 import { registerRoutes } from './routes';
 
 dotenv.config();
@@ -16,7 +16,7 @@ async function start(): Promise<void> {
   registerRoutes(app);
 
   console.log('Starting submit-service...');
-  await waitForDbReady();
+  await initRabbitPublisher();
 
   app.listen(port, () => {
     console.log(`submit-service listening on port ${port}`);

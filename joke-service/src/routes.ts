@@ -13,6 +13,9 @@ type TypeRow = RowDataPacket & {
   name: string;
 };
 
+const JOKE_SELECT =
+  "SELECT j.id, CONCAT(j.setup, ' ', j.punchline) AS text, t.name AS type FROM jokes j JOIN types t ON j.type_id=t.id";
+
 export function registerRoutes(app: Express): void {
   const viewsDir = path.join(__dirname, 'views');
 
@@ -22,9 +25,7 @@ export function registerRoutes(app: Express): void {
 
   app.get('/random', async (_req, res, next) => {
     try {
-      const rows = await query<JokeRow[]>(
-        'SELECT j.id, j.text, t.name AS type FROM jokes j JOIN types t ON j.type_id=t.id ORDER BY RAND() LIMIT 1'
-      );
+      const rows = await query<JokeRow[]>(`${JOKE_SELECT} ORDER BY RAND() LIMIT 1`);
 
       if (rows.length === 0) {
         res.status(404).json({ error: 'Not found' });
@@ -46,10 +47,7 @@ export function registerRoutes(app: Express): void {
         return;
       }
 
-      const rows = await query<JokeRow[]>(
-        'SELECT j.id, j.text, t.name AS type FROM jokes j JOIN types t ON j.type_id=t.id WHERE j.id=?',
-        [jokeId]
-      );
+      const rows = await query<JokeRow[]>(`${JOKE_SELECT} WHERE j.id=?`, [jokeId]);
 
       if (rows.length === 0) {
         res.status(404).json({ error: 'Not found' });
