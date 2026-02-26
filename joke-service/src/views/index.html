@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Joke Service</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sakura.css/css/sakura.css" type="text/css">
+  </head>
+  <body>
+    <main>
+      <h1>Joke Service</h1>
+      <p>Click random to fetch a joke from the JSON API.</p>
+      <p>
+        <button id="randomBtn" type="button">Random</button>
+        <a href="http://localhost:3001/submit">Add</a>
+      </p>
+
+      <section aria-live="polite">
+        <h2>Current Joke</h2>
+        <p><strong>ID:</strong> <span id="jokeId">-</span></p>
+        <p><strong>Type:</strong> <span id="jokeType">-</span></p>
+        <p><strong>Text:</strong> <span id="jokeText">Click Random to load a joke.</span></p>
+      </section>
+    </main>
+
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js" integrity="sha256-/JqT3SQfawRcv/BIHPThkBvs0OEvtFFmqPF/lYI/Cxo=" crossorigin="anonymous"></script>
+    <script>
+      $(function () {
+        $('#randomBtn').on('click', function () {
+          $('#jokeText').text('Loading...');
+          $.ajax({
+            url: '/random',
+            method: 'GET',
+            dataType: 'json'
+          })
+            .done(function (data) {
+              $('#jokeId').text(data.id);
+              $('#jokeType').text(data.type);
+              $('#jokeText').text(data.text);
+            })
+            .fail(function () {
+              $('#jokeText').text('Failed to load a joke. Please try again.');
+            });
+        });
+      });
+    </script>
+  </body>
+</html>

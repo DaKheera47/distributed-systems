@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Submit a Joke</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sakura.css/css/sakura.css" type="text/css">
+  </head>
+  <body>
+    <main>
+      <h1>Submit a Joke</h1>
+      <p>Add a joke to the shared database.</p>
+
+      <form action="/submit" method="post">
+        <label for="text">Joke Text</label>
+        <textarea id="text" name="text" rows="6" required></textarea>
+
+        <label for="typeSelect">Type</label>
+        <select name="type" id="typeSelect" required>
+          <option value="">Loading types...</option>
+        </select>
+
+        <button type="submit">Submit</button>
+      </form>
+
+      <p><a href="http://localhost:3000/">Back to Joke UI</a></p>
+    </main>
+
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js" integrity="sha256-/JqT3SQfawRcv/BIHPThkBvs0OEvtFFmqPF/lYI/Cxo=" crossorigin="anonymous"></script>
+    <script>
+      $(function () {
+        var $select = $('#typeSelect');
+        $.getJSON('/types')
+          .done(function (types) {
+            $select.empty();
+            $select.append($('<option>', { value: '', text: 'Select a type' }));
+            types.forEach(function (typeName) {
+              $select.append($('<option>', { value: typeName, text: typeName }));
+            });
+          })
+          .fail(function () {
+            $select.empty();
+            $select.append($('<option>', { value: '', text: 'Failed to load types' }));
+          });
+      });
+    </script>
+  </body>
+</html>
