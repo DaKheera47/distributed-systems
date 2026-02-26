@@ -26,14 +26,14 @@
         <button type="submit">Submit</button>
       </form>
 
-      <p><a href="http://localhost:3000/">Back to Joke UI</a></p>
+      <p><a href="/">Back to Joke UI</a></p>
     </main>
 
     <script src="https://code.jquery.com/jquery-3.7.1.min.js" integrity="sha256-/JqT3SQfawRcv/BIHPThkBvs0OEvtFFmqPF/lYI/Cxo=" crossorigin="anonymous"></script>
     <script>
       $(function () {
         var $select = $('#typeSelect');
-        $.getJSON('/types')
+        $.getJSON('/submit-types')
           .done(function (types) {
             $select.empty();
             $select.append($('<option>', { value: '', text: 'Select a type' }));

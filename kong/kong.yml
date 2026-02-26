@@ -1,0 +1,53 @@
+_format_version: "3.0"
+_transform: true
+
+services:
+  - name: joke-service
+    url: http://joke-service:3000
+    routes:
+      - name: joke-root
+        paths:
+          - /
+        methods:
+          - GET
+        strip_path: false
+      - name: joke-random
+        paths:
+          - /random
+        methods:
+          - GET
+        strip_path: false
+        plugins:
+          - name: rate-limiting
+            config:
+              minute: 5
+              policy: local
+      - name: joke-by-id
+        paths:
+          - /joke
+        methods:
+          - GET
+        strip_path: false
+      - name: joke-types
+        paths:
+          - /types
+        methods:
+          - GET
+        strip_path: false
+
+  - name: submit-service
+    url: http://submit-service:3001
+    routes:
+      - name: submit-ui
+        paths:
+          - /submit
+        methods:
+          - GET
+          - POST
+        strip_path: false
+      - name: submit-types
+        paths:
+          - /submit-types
+        methods:
+          - GET
+        strip_path: false

@@ -39,8 +39,6 @@ services:
       DB_PASSWORD: pass123
       DB_NAME: jokesdb
       PORT: 3000
-    ports:
-      - "3000:3000"
     depends_on:
       mysql:
         condition: service_healthy
@@ -53,8 +51,6 @@ services:
       QUEUE_NAME: SUBMITTED_JOKES
       JOKE_SERVICE_TYPES_URL: http://joke-service:3000/types
       TYPES_CACHE_PATH: /usr/src/data/types.json
-    ports:
-      - "3001:3001"
     volumes:
       - submit-types:/usr/src/data
     depends_on:
@@ -78,6 +74,26 @@ services:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
+
+  kong:
+    image: kong:3.7
+    environment:
+      KONG_DATABASE: "off"
+      KONG_DECLARATIVE_CONFIG: /etc/kong/kong.yml
+      KONG_PROXY_LISTEN: 0.0.0.0:8443 ssl
+      KONG_ADMIN_LISTEN: "off"
+      KONG_SSL_CERT: /etc/kong/certs/localhost.crt
+      KONG_SSL_CERT_KEY: /etc/kong/certs/localhost.key
+    ports:
+      - "8443:8443"
+    volumes:
+      - ./kong/kong.yml:/etc/kong/kong.yml:ro
+      - ./kong/certs:/etc/kong/certs:ro
+    depends_on:
+      joke-service:
+        condition: service_started
+      submit-service:
+        condition: service_started
 
 volumes:
   mysql-data:

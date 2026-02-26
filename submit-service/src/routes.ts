@@ -79,14 +79,26 @@ async function getTypesWithCacheFallback(): Promise<string[]> {
 }
 
 export function registerRoutes(app: Express): void {
+  const sendTypes = async (res: Response): Promise<void> => {
+    const types = await getTypesWithCacheFallback();
+    res.json(types);
+  };
+
   app.get('/submit', (_req, res) => {
     res.sendFile(path.join(viewsDir, 'submit.html'));
   });
 
   app.get('/types', async (_req, res, next) => {
     try {
-      const types = await getTypesWithCacheFallback();
-      res.json(types);
+      await sendTypes(res);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get('/submit-types', async (_req, res, next) => {
+    try {
+      await sendTypes(res);
     } catch (error) {
       next(error);
     }
