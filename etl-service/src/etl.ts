@@ -1,16 +1,27 @@
 import { Channel, ConsumeMessage } from 'amqplib';
-import { ResultSetHeader } from 'mysql2';
+import { ResultSetHeader, RowDataPacket } from 'mysql2';
 import { PoolConnection } from 'mysql2/promise';
 import { pool } from './db';
+import { publishTypeUpdateEvent } from './rabbit';
 
-type SubmittedJokePayload = {
+type ModeratedJokePayload = {
   setup: string;
   punchline: string;
   type: string;
   submittedAt: string;
+  moderatedAt: string;
 };
 
-function parseSubmittedJoke(raw: string): SubmittedJokePayload | null {
+type TypeIdRow = RowDataPacket & {
+  id: number;
+  name: string;
+};
+
+type TypeNameRow = RowDataPacket & {
+  name: string;
+};
+
+function parseModeratedJoke(raw: string): ModeratedJokePayload | null {
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
@@ -27,7 +38,8 @@ function parseSubmittedJoke(raw: string): SubmittedJokePayload | null {
     typeof candidate.setup !== 'string' ||
     typeof candidate.punchline !== 'string' ||
     typeof candidate.type !== 'string' ||
-    typeof candidate.submittedAt !== 'string'
+    typeof candidate.submittedAt !== 'string' ||
+    typeof candidate.moderatedAt !== 'string'
   ) {
     return null;
   }
@@ -36,31 +48,41 @@ function parseSubmittedJoke(raw: string): SubmittedJokePayload | null {
     setup: candidate.setup,
     punchline: candidate.punchline,
     type: candidate.type,
-    submittedAt: candidate.submittedAt
+    submittedAt: candidate.submittedAt,
+    moderatedAt: candidate.moderatedAt
   };
 }
 
-async function insertJoke(connection: PoolConnection, payload: SubmittedJokePayload): Promise<number> {
-  const setup = payload.setup.trim();
-  const punchline = payload.punchline.trim();
-  const type = payload.type.trim();
+async function ensureType(connection: PoolConnection, typeName: string): Promise<{ typeId: number; isNewType: boolean; canonicalType: string }> {
+  const [existingRows] = await connection.execute<TypeIdRow[]>(
+    'SELECT id, name FROM types WHERE LOWER(name) = LOWER(?) LIMIT 1',
+    [typeName]
+  );
 
-  if (setup.length < 1 || punchline.length < 1 || type.length < 1) {
-    throw new Error('validation');
+  if (existingRows.length > 0) {
+    return { typeId: existingRows[0].id, isNewType: false, canonicalType: existingRows[0].name };
   }
 
-  const [typeResult] = await connection.execute<ResultSetHeader>(
-    'INSERT INTO types (name) VALUES (?) ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(id), name = name',
-    [type]
-  );
+  try {
+    const [insertResult] = await connection.execute<ResultSetHeader>('INSERT INTO types (name) VALUES (?)', [typeName]);
+    return { typeId: insertResult.insertId, isNewType: true, canonicalType: typeName };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (!message.toLowerCase().includes('duplicate')) {
+      throw error;
+    }
 
-  const typeId = typeResult.insertId;
-  const [jokeResult] = await connection.execute<ResultSetHeader>(
-    'INSERT INTO jokes (setup, punchline, type_id) VALUES (?, ?, ?)',
-    [setup, punchline, typeId]
-  );
+    const [retryRows] = await connection.execute<TypeIdRow[]>(
+      'SELECT id, name FROM types WHERE LOWER(name) = LOWER(?) LIMIT 1',
+      [typeName]
+    );
 
-  return jokeResult.insertId;
+    if (retryRows.length === 0) {
+      throw error;
+    }
+
+    return { typeId: retryRows[0].id, isNewType: false, canonicalType: retryRows[0].name };
+  }
 }
 
 export async function handleMessage(channel: Channel, msg: ConsumeMessage | null): Promise<void> {
@@ -69,7 +91,7 @@ export async function handleMessage(channel: Channel, msg: ConsumeMessage | null
   }
 
   const raw = msg.content.toString('utf8');
-  const parsed = parseSubmittedJoke(raw);
+  const parsed = parseModeratedJoke(raw);
 
   if (!parsed) {
     console.error('ETL poison message (invalid JSON or shape), acking:', raw);
@@ -90,8 +112,8 @@ export async function handleMessage(channel: Channel, msg: ConsumeMessage | null
     return;
   }
 
-  if (Number.isNaN(Date.parse(parsed.submittedAt))) {
-    console.error('ETL poison message (invalid submittedAt), acking:', raw);
+  if (Number.isNaN(Date.parse(parsed.submittedAt)) || Number.isNaN(Date.parse(parsed.moderatedAt))) {
+    console.error('ETL poison message (invalid timestamps), acking:', raw);
     channel.ack(msg);
     return;
   }
@@ -100,9 +122,21 @@ export async function handleMessage(channel: Channel, msg: ConsumeMessage | null
   try {
     connection = await pool.getConnection();
     await connection.beginTransaction();
-    const jokeId = await insertJoke(connection, trimmed);
+
+    const { typeId, isNewType, canonicalType } = await ensureType(connection, trimmed.type);
+    const [jokeResult] = await connection.execute<ResultSetHeader>(
+      'INSERT INTO jokes (setup, punchline, type_id) VALUES (?, ?, ?)',
+      [trimmed.setup, trimmed.punchline, typeId]
+    );
+
     await connection.commit();
-    console.log(`ETL inserted joke ${jokeId} (type=${trimmed.type})`);
+
+    if (isNewType) {
+      publishTypeUpdateEvent(channel, { type: canonicalType, updatedAt: new Date().toISOString() });
+      console.log(`ETL published type_update for new type: ${canonicalType}`);
+    }
+
+    console.log(`ETL inserted moderated joke ${jokeResult.insertId} (type=${canonicalType})`);
     channel.ack(msg);
   } catch (error) {
     if (connection) {
@@ -113,16 +147,17 @@ export async function handleMessage(channel: Channel, msg: ConsumeMessage | null
       }
     }
 
-    const message = error instanceof Error ? error.message : String(error);
-    if (message === 'validation') {
-      console.error('ETL validation failed after transform, acking poison message');
-      channel.ack(msg);
-      return;
-    }
-
-    console.error('ETL DB/transient error, requeueing message:', message);
+    console.error('ETL DB/transient error, requeueing message:', error);
     channel.nack(msg, false, true);
   } finally {
     connection?.release();
   }
+}
+
+export async function publishExistingTypesSnapshot(channel: Channel): Promise<void> {
+  const [rows] = await pool.query<TypeNameRow[]>('SELECT name FROM types ORDER BY name');
+  for (const row of rows) {
+    publishTypeUpdateEvent(channel, { type: row.name, updatedAt: new Date().toISOString() });
+  }
+  console.log(`ETL published initial type_update snapshot for ${rows.length} type(s)`);
 }

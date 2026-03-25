@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Moderate Jokes</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sakura.css/css/sakura.css" type="text/css">
+  </head>
+  <body>
+    <main>
+      <h1>Moderate Jokes</h1>
+      <p>Approving sends a moderated joke to the moderated queue. Rejecting discards the queued submitted joke.</p>
+      <p><a href="/">Back to Joke UI</a></p>
+
+      <section id="status" aria-live="polite">Checking for jokes...</section>
+
+      <form id="moderationForm" hidden>
+        <label for="setup">Setup</label>
+        <textarea id="setup" name="setup" rows="4" required></textarea>
+
+        <label for="punchline">Punchline</label>
+        <textarea id="punchline" name="punchline" rows="3" required></textarea>
+
+        <label for="typeSelect">Type</label>
+        <select id="typeSelect" name="type"></select>
+
+        <label for="customType">Or enter custom type</label>
+        <input id="customType" name="customType" type="text" />
+
+        <p>
+          <button type="submit">Approve</button>
+          <button id="rejectBtn" type="button">Reject</button>
+        </p>
+      </form>
+    </main>
+
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js" integrity="sha256-/JqT3SQfawRcv/BIHPThkBvs0OEvtFFmqPF/lYI/Cxo=" crossorigin="anonymous"></script>
+    <script src="/public/moderate.js"></script>
+  </body>
+</html>

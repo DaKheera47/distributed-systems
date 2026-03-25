@@ -48,16 +48,32 @@ services:
     environment:
       PORT: 3001
       RABBITMQ_URL: amqp://rabbitmq:5672
-      QUEUE_NAME: SUBMITTED_JOKES
-      JOKE_SERVICE_TYPES_URL: http://joke-service:3000/types
+      SUBMITTED_QUEUE: SUBMITTED_JOKES
+      MODERATED_QUEUE: MODERATED_JOKES
+      TYPE_UPDATE_EXCHANGE: type_update
+      TYPE_UPDATE_QUEUE: sub_type_update
       TYPES_CACHE_PATH: /usr/src/data/types.json
     volumes:
       - submit-types:/usr/src/data
     depends_on:
       rabbitmq:
         condition: service_healthy
-      joke-service:
-        condition: service_started
+
+  moderate-service:
+    build: ./moderate-service
+    environment:
+      PORT: 3002
+      RABBITMQ_URL: amqp://rabbitmq:5672
+      SUBMITTED_QUEUE: SUBMITTED_JOKES
+      MODERATED_QUEUE: MODERATED_JOKES
+      TYPE_UPDATE_EXCHANGE: type_update
+      TYPE_UPDATE_QUEUE: mod_type_update
+      TYPES_CACHE_PATH: /usr/src/data/types.json
+    volumes:
+      - moderate-types:/usr/src/data
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
 
   etl-service:
     build: ./etl-service
@@ -68,12 +84,18 @@ services:
       DB_PASSWORD: pass123
       DB_NAME: jokesdb
       RABBITMQ_URL: amqp://rabbitmq:5672
-      QUEUE_NAME: SUBMITTED_JOKES
+      SUBMITTED_QUEUE: SUBMITTED_JOKES
+      MODERATED_QUEUE: MODERATED_JOKES
+      TYPE_UPDATE_EXCHANGE: type_update
     depends_on:
       mysql:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
+      submit-service:
+        condition: service_started
+      moderate-service:
+        condition: service_started
 
   kong:
     image: kong:3.7
@@ -94,8 +116,11 @@ services:
         condition: service_started
       submit-service:
         condition: service_started
+      moderate-service:
+        condition: service_started
 
 volumes:
   mysql-data:
   rabbitmq-data:
   submit-types:
+  moderate-types:

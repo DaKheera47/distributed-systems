@@ -51,3 +51,37 @@ services:
         methods:
           - GET
         strip_path: false
+
+  - name: moderate-service
+    url: http://moderate-service:3002
+    routes:
+      - name: moderate-ui
+        paths:
+          - /moderate
+        methods:
+          - GET
+        strip_path: false
+      - name: moderate-assets
+        paths:
+          - /public
+        methods:
+          - GET
+        strip_path: false
+      - name: moderate-approve
+        paths:
+          - /moderated
+        methods:
+          - POST
+        strip_path: false
+      - name: moderate-reject
+        paths:
+          - /reject
+        methods:
+          - POST
+        strip_path: false
+      - name: moderate-types
+        paths:
+          - /moderate-types
+        methods:
+          - GET
+        strip_path: false

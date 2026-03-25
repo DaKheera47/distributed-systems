@@ -1,7 +1,7 @@
-import { mkdir, readFile, writeFile } from 'fs/promises';
 import path from 'path';
 import { Express, NextFunction, Request, Response } from 'express';
 import { publishSubmittedJoke, QueueUnavailableError } from './rabbit';
+import { readTypesCache } from './typesCache';
 
 function htmlMessage(title: string, message: string): string {
   return `<!DOCTYPE html>
@@ -23,64 +23,10 @@ function htmlMessage(title: string, message: string): string {
 }
 
 const viewsDir = path.join(__dirname, 'views');
-const cachePath = process.env.TYPES_CACHE_PATH ?? '/usr/src/data/types.json';
-const typesUrl = process.env.JOKE_SERVICE_TYPES_URL ?? 'http://joke-service:3000/types';
-
-async function saveTypesCache(types: string[]): Promise<void> {
-  await mkdir(path.dirname(cachePath), { recursive: true });
-  await writeFile(cachePath, JSON.stringify(types, null, 2), 'utf8');
-}
-
-async function readTypesCache(): Promise<string[] | null> {
-  try {
-    const raw = await readFile(cachePath, 'utf8');
-    const parsed: unknown = JSON.parse(raw);
-    if (!Array.isArray(parsed) || !parsed.every((item) => typeof item === 'string')) {
-      console.warn('submit-service types cache file is invalid JSON array');
-      return null;
-    }
-    return parsed;
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    console.warn(`submit-service types cache unavailable: ${message}`);
-    return null;
-  }
-}
-
-async function fetchTypesFromJokeService(): Promise<string[]> {
-  const response = await fetch(typesUrl);
-  if (!response.ok) {
-    throw new Error(`types fetch failed with status ${response.status}`);
-  }
-
-  const data: unknown = await response.json();
-  if (!Array.isArray(data) || !data.every((item) => typeof item === 'string')) {
-    throw new Error('types fetch returned invalid payload');
-  }
-
-  return data;
-}
-
-async function getTypesWithCacheFallback(): Promise<string[]> {
-  try {
-    const freshTypes = await fetchTypesFromJokeService();
-    await saveTypesCache(freshTypes);
-    return freshTypes;
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    console.warn(`submit-service failed to fetch types from joke-service, using cache: ${message}`);
-    const cachedTypes = await readTypesCache();
-    if (cachedTypes) {
-      return cachedTypes;
-    }
-    console.warn('submit-service returning empty type list because cache is missing');
-    return [];
-  }
-}
 
 export function registerRoutes(app: Express): void {
   const sendTypes = async (res: Response): Promise<void> => {
-    const types = await getTypesWithCacheFallback();
+    const types = await readTypesCache();
     res.json(types);
   };
 
@@ -125,13 +71,7 @@ export function registerRoutes(app: Express): void {
         return;
       }
 
-      await publishSubmittedJoke({
-        setup,
-        punchline,
-        type,
-        submittedAt: new Date().toISOString()
-      });
-
+      await publishSubmittedJoke({ setup, punchline, type, submittedAt: new Date().toISOString() });
       res.sendFile(path.join(viewsDir, 'success.html'));
     } catch (error) {
       if (error instanceof QueueUnavailableError) {
@@ -139,7 +79,6 @@ export function registerRoutes(app: Express): void {
         res.status(503).send(htmlMessage('Queue Unavailable', 'Submission queue unavailable. Please try again shortly.'));
         return;
       }
-
       next(error);
     }
   });

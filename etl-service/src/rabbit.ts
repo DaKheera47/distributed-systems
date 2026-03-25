@@ -1,16 +1,23 @@
 import amqp, { Channel, ChannelModel, ConsumeMessage } from 'amqplib';
 
 const rabbitUrl = process.env.RABBITMQ_URL ?? 'amqp://rabbitmq:5672';
-const queueName = process.env.QUEUE_NAME ?? 'SUBMITTED_JOKES';
+const moderatedQueue = process.env.MODERATED_QUEUE ?? 'MODERATED_JOKES';
+const typeUpdateExchange = process.env.TYPE_UPDATE_EXCHANGE ?? 'type_update';
 
 let connection: ChannelModel | null = null;
 let channel: Channel | null = null;
+
+export type TypeUpdateEvent = {
+  type: string;
+  updatedAt: string;
+};
 
 async function connectOnce(): Promise<Channel> {
   const nextConnection = await amqp.connect(rabbitUrl);
   const nextChannel = await nextConnection.createChannel();
 
-  await nextChannel.assertQueue(queueName, { durable: true });
+  await nextChannel.assertQueue(moderatedQueue, { durable: true });
+  await nextChannel.assertExchange(typeUpdateExchange, 'fanout', { durable: true });
   await nextChannel.prefetch(10);
 
   nextConnection.on('error', (error) => {
@@ -25,19 +32,14 @@ async function connectOnce(): Promise<Channel> {
   connection = nextConnection;
   channel = nextChannel;
 
-  console.log(`etl-service connected to RabbitMQ queue ${queueName}`);
+  console.log(`etl-service connected to RabbitMQ; moderated_queue=${moderatedQueue}, type_update_exchange=${typeUpdateExchange}`);
   return nextChannel;
 }
 
-export async function startConsumer(
-  onMessage: (channel: Channel, msg: ConsumeMessage | null) => Promise<void>
-): Promise<void> {
-  let activeChannel: Channel | null = null;
-
+export async function initRabbit(): Promise<Channel> {
   for (let attempt = 1; attempt <= 30; attempt += 1) {
     try {
-      activeChannel = await connectOnce();
-      break;
+      return await connectOnce();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       console.log(`RabbitMQ not ready yet (attempt ${attempt}/30): ${message}`);
@@ -45,20 +47,24 @@ export async function startConsumer(
     }
   }
 
-  if (!activeChannel) {
-    console.error('ETL RabbitMQ readiness check failed after 30 attempts');
-    process.exit(1);
-  }
+  console.error('ETL RabbitMQ readiness check failed after 30 attempts');
+  process.exit(1);
+}
+
+export async function startConsumer(
+  onMessage: (channel: Channel, msg: ConsumeMessage | null) => Promise<void>
+): Promise<void> {
+  const activeChannel = channel ?? (await initRabbit());
 
   await activeChannel.consume(
-    queueName,
+    moderatedQueue,
     async (msg) => {
       try {
-        await onMessage(activeChannel as Channel, msg);
+        await onMessage(activeChannel, msg);
       } catch (error) {
         console.error('ETL unhandled consumer error:', error);
         if (msg) {
-          (activeChannel as Channel).nack(msg, false, true);
+          activeChannel.nack(msg, false, true);
         }
       }
     },
@@ -66,4 +72,9 @@ export async function startConsumer(
   );
 
   console.log('etl-service consumer started');
+}
+
+export function publishTypeUpdateEvent(activeChannel: Channel, event: TypeUpdateEvent): void {
+  const payload = Buffer.from(JSON.stringify(event));
+  activeChannel.publish(typeUpdateExchange, '', payload, { persistent: true });
 }
