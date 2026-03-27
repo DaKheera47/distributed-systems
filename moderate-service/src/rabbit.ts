@@ -1,4 +1,4 @@
-import amqp, { Channel, ChannelModel, ConsumeMessage } from 'amqplib';
+import amqp, { Channel, ChannelModel, ConsumeMessage, Message } from 'amqplib';
 import { upsertTypeInCache } from './typesCache';
 
 export type SubmittedJokePayload = {
@@ -18,7 +18,7 @@ export type ModerationItemResponse =
 
 let connection: ChannelModel | null = null;
 let workChannel: Channel | null = null;
-let heldMessage: ConsumeMessage | null = null;
+let heldMessage: Message | null = null;
 let heldPayload: SubmittedJokePayload | null = null;
 
 const rabbitUrl = process.env.RABBITMQ_URL ?? 'amqp://rabbitmq:5672';
@@ -27,7 +27,7 @@ const moderatedQueue = process.env.MODERATED_QUEUE ?? 'MODERATED_JOKES';
 const typeUpdateExchange = process.env.TYPE_UPDATE_EXCHANGE ?? 'type_update';
 const typeUpdateQueue = process.env.TYPE_UPDATE_QUEUE ?? 'mod_type_update';
 
-function parseSubmittedPayload(msg: ConsumeMessage): SubmittedJokePayload | null {
+function parseSubmittedPayload(msg: Message): SubmittedJokePayload | null {
   try {
     const parsed: unknown = JSON.parse(msg.content.toString('utf8'));
     if (typeof parsed !== 'object' || parsed === null) {
@@ -53,7 +53,7 @@ function parseSubmittedPayload(msg: ConsumeMessage): SubmittedJokePayload | null
   }
 }
 
-function parseTypeUpdate(msg: ConsumeMessage): { type: string; updatedAt: string } | null {
+function parseTypeUpdate(msg: Message): { type: string; updatedAt: string } | null {
   try {
     const parsed: unknown = JSON.parse(msg.content.toString('utf8'));
     if (typeof parsed !== 'object' || parsed === null) {
