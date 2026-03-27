@@ -5,7 +5,6 @@ services:
       MYSQL_ROOT_PASSWORD: pass123
       MYSQL_DATABASE: jokesdb
     volumes:
-      - mysql-data:/var/lib/mysql
       - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     ports:
       - "3306:3306"
@@ -13,22 +12,22 @@ services:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-ppass123"]
       interval: 5s
       timeout: 5s
-      retries: 20
-      start_period: 10s
+      retries: 30
+      start_period: 30s
 
   rabbitmq:
     image: rabbitmq:3-management
+    environment:
+      RABBITMQ_ERLANG_COOKIE: distributedsystemsrabbitmqcookie12345
     ports:
       - "5672:5672"
       - "15672:15672"
-    volumes:
-      - rabbitmq-data:/var/lib/rabbitmq
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
       interval: 5s
       timeout: 5s
-      retries: 20
-      start_period: 10s
+      retries: 30
+      start_period: 30s
 
   joke-service:
     build: ./joke-service
@@ -120,7 +119,5 @@ services:
         condition: service_started
 
 volumes:
-  mysql-data:
-  rabbitmq-data:
   submit-types:
   moderate-types:
