@@ -1,91 +1,196 @@
 services:
   mysql:
     image: mysql:8.0
+    container_name: jokes_mysql
     environment:
-      MYSQL_ROOT_PASSWORD: pass123
-      MYSQL_DATABASE: jokesdb
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-pass123}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-jokesdb}
     volumes:
       - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - mysql_data:/var/lib/mysql
     ports:
-      - "3306:3306"
+      - "${MYSQL_PORT:-3306}:3306"
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-ppass123"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-p${MYSQL_ROOT_PASSWORD:-pass123}"]
       interval: 5s
       timeout: 5s
       retries: 30
       start_period: 30s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - jokes_network
 
   rabbitmq:
     image: rabbitmq:3-management
+    container_name: jokes_rabbitmq
     environment:
-      RABBITMQ_ERLANG_COOKIE: distributedsystemsrabbitmqcookie12345
+      RABBITMQ_ERLANG_COOKIE: ${RABBITMQ_ERLANG_COOKIE:-distributedsystemsrabbitmqcookie12345}
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-admin}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-admin123}
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
     ports:
-      - "5672:5672"
-      - "15672:15672"
+      - "${RABBITMQ_PORT:-5672}:5672"
+      - "${RABBITMQ_MGMT_PORT:-15672}:15672"
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
       interval: 5s
       timeout: 5s
       retries: 30
       start_period: 30s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - jokes_network
 
   joke-service:
-    build: ./joke-service
+    build:
+      context: ./joke-service
+      target: development
+    container_name: jokes_joke_service
     environment:
+      NODE_ENV: ${NODE_ENV:-development}
       DB_HOST: mysql
       DB_PORT: 3306
       DB_USER: root
-      DB_PASSWORD: pass123
-      DB_NAME: jokesdb
-      PORT: 3000
+      DB_PASSWORD: ${MYSQL_ROOT_PASSWORD:-pass123}
+      DB_NAME: ${MYSQL_DATABASE:-jokesdb}
+      PORT: ${JOKE_SERVICE_PORT:-3000}
+    volumes:
+      - ./joke-service/src:/usr/src/app/src:ro
+    ports:
+      - "${JOKE_SERVICE_PORT:-3000}:3000"
     depends_on:
       mysql:
         condition: service_healthy
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 128M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - jokes_network
 
   submit-service:
-    build: ./submit-service
+    build:
+      context: ./submit-service
+      target: development
+    container_name: jokes_submit_service
     environment:
-      PORT: 3001
-      RABBITMQ_URL: amqp://rabbitmq:5672
-      SUBMITTED_QUEUE: SUBMITTED_JOKES
-      MODERATED_QUEUE: MODERATED_JOKES
-      TYPE_UPDATE_EXCHANGE: type_update
-      TYPE_UPDATE_QUEUE: sub_type_update
+      NODE_ENV: ${NODE_ENV:-development}
+      PORT: ${SUBMIT_SERVICE_PORT:-3001}
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-admin}:${RABBITMQ_PASSWORD:-admin123}@rabbitmq:5672
+      SUBMITTED_QUEUE: ${SUBMITTED_QUEUE:-SUBMITTED_JOKES}
+      MODERATED_QUEUE: ${MODERATED_QUEUE:-MODERATED_JOKES}
+      TYPE_UPDATE_EXCHANGE: ${TYPE_UPDATE_EXCHANGE:-type_update}
+      TYPE_UPDATE_QUEUE: ${SUB_TYPE_UPDATE_QUEUE:-sub_type_update}
       TYPES_CACHE_PATH: /usr/src/data/types.json
     volumes:
       - submit-types:/usr/src/data
+      - ./submit-service/src:/usr/src/app/src:ro
+    ports:
+      - "${SUBMIT_SERVICE_PORT:-3001}:3001"
     depends_on:
       rabbitmq:
         condition: service_healthy
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 128M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - jokes_network
 
   moderate-service:
-    build: ./moderate-service
+    build:
+      context: ./moderate-service
+      target: development
+    container_name: jokes_moderate_service
     environment:
-      PORT: 3002
-      RABBITMQ_URL: amqp://rabbitmq:5672
-      SUBMITTED_QUEUE: SUBMITTED_JOKES
-      MODERATED_QUEUE: MODERATED_JOKES
-      TYPE_UPDATE_EXCHANGE: type_update
-      TYPE_UPDATE_QUEUE: mod_type_update
+      NODE_ENV: ${NODE_ENV:-development}
+      PORT: ${MODERATE_SERVICE_PORT:-3002}
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-admin}:${RABBITMQ_PASSWORD:-admin123}@rabbitmq:5672
+      SUBMITTED_QUEUE: ${SUBMITTED_QUEUE:-SUBMITTED_JOKES}
+      MODERATED_QUEUE: ${MODERATED_QUEUE:-MODERATED_JOKES}
+      TYPE_UPDATE_EXCHANGE: ${TYPE_UPDATE_EXCHANGE:-type_update}
+      TYPE_UPDATE_QUEUE: ${MOD_TYPE_UPDATE_QUEUE:-mod_type_update}
       TYPES_CACHE_PATH: /usr/src/data/types.json
     volumes:
       - moderate-types:/usr/src/data
+      - ./moderate-service/src:/usr/src/app/src:ro
+    ports:
+      - "${MODERATE_SERVICE_PORT:-3002}:3002"
     depends_on:
       rabbitmq:
         condition: service_healthy
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 128M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - jokes_network
 
   etl-service:
-    build: ./etl-service
+    build:
+      context: ./etl-service
+      target: development
+    container_name: jokes_etl_service
     environment:
+      NODE_ENV: ${NODE_ENV:-development}
       DB_HOST: mysql
       DB_PORT: 3306
       DB_USER: root
-      DB_PASSWORD: pass123
-      DB_NAME: jokesdb
-      RABBITMQ_URL: amqp://rabbitmq:5672
-      SUBMITTED_QUEUE: SUBMITTED_JOKES
-      MODERATED_QUEUE: MODERATED_JOKES
-      TYPE_UPDATE_EXCHANGE: type_update
+      DB_PASSWORD: ${MYSQL_ROOT_PASSWORD:-pass123}
+      DB_NAME: ${MYSQL_DATABASE:-jokesdb}
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-admin}:${RABBITMQ_PASSWORD:-admin123}@rabbitmq:5672
+      SUBMITTED_QUEUE: ${SUBMITTED_QUEUE:-SUBMITTED_JOKES}
+      MODERATED_QUEUE: ${MODERATED_QUEUE:-MODERATED_JOKES}
+      TYPE_UPDATE_EXCHANGE: ${TYPE_UPDATE_EXCHANGE:-type_update}
+    volumes:
+      - ./etl-service/src:/usr/src/app/src:ro
     depends_on:
       mysql:
         condition: service_healthy
@@ -95,9 +200,24 @@ services:
         condition: service_started
       moderate-service:
         condition: service_started
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 128M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - jokes_network
 
   kong:
     image: kong:3.7
+    container_name: jokes_kong
     environment:
       KONG_DATABASE: "off"
       KONG_DECLARATIVE_CONFIG: /etc/kong/kong.yml
@@ -105,11 +225,12 @@ services:
       KONG_ADMIN_LISTEN: "off"
       KONG_SSL_CERT: /etc/kong/certs/localhost.crt
       KONG_SSL_CERT_KEY: /etc/kong/certs/localhost.key
-    ports:
-      - "8443:8443"
+      KONG_LOG_LEVEL: ${KONG_LOG_LEVEL:-info}
     volumes:
       - ./kong/kong.yml:/etc/kong/kong.yml:ro
       - ./kong/certs:/etc/kong/certs:ro
+    ports:
+      - "${KONG_PORT:-8443}:8443"
     depends_on:
       joke-service:
         condition: service_started
@@ -117,7 +238,41 @@ services:
         condition: service_started
       moderate-service:
         condition: service_started
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - jokes_network
+
+  adminer:
+    image: adminer
+    container_name: jokes_adminer
+    restart: unless-stopped
+    ports:
+      - "${ADMINER_PORT:-8080}:8080"
+    networks:
+      - jokes_network
+
+networks:
+  jokes_network:
+    driver: bridge
+    name: jokes_network
 
 volumes:
+  mysql_data:
+    name: jokes_mysql_data
+  rabbitmq_data:
+    name: jokes_rabbitmq_data
   submit-types:
+    name: jokes_submit_types
   moderate-types:
+    name: jokes_moderate_types
